@@ -2,6 +2,8 @@
   display: grid;
   gap: var(--space-4);
   padding: var(--space-4);
+  max-width: 980px;
+  margin: 0 auto;
 }
 
 .panel {
@@ -131,6 +133,7 @@ button.danger {
   display: grid;
   gap: var(--space-2);
   background: var(--surface-soft);
+  cursor: pointer;
 }
 
 .participant-card.is-active {
@@ -152,6 +155,86 @@ button.danger {
   gap: var(--space-2);
 }
 
+.hp-line {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.hp-bar {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.hp-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.hp-bar.monster .hp-bar-fill {
+  background: var(--hp-monster);
+}
+
+.hp-bar.player-green .hp-bar-fill {
+  background: var(--hp-player-green);
+}
+
+.hp-bar.player-blue .hp-bar-fill {
+  background: var(--hp-player-blue);
+}
+
+.hp-bar.player-yellow .hp-bar-fill {
+  background: var(--hp-player-yellow);
+}
+
+.hp-bar.player-purple .hp-bar-fill {
+  background: var(--hp-player-purple);
+}
+
+.targets-box {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--surface-soft);
+}
+
+.targets-grid {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.target-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--text);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  z-index: 30;
+}
+
+.modal {
+  width: min(100%, 640px);
+  max-height: 90vh;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-sm);
+}
+
 .stats-grid {
   display: grid;
   gap: var(--space-2);
@@ -166,14 +249,7 @@ button.danger {
 
 @media (min-width: 700px) {
   .app {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .app > .panel:first-child,
-  .app > .panel:nth-child(2),
-  .app > .panel:nth-child(3),
-  .app > .panel:last-child {
-    grid-column: 1 / -1;
+    grid-template-columns: 1fr 1fr;
   }
 
   .grid-form {
@@ -186,5 +262,10 @@ button.danger {
 
   .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .panel:first-child,
+  .panel:nth-child(3) {
+    grid-column: 1 / -1;
   }
 }
