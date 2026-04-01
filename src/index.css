@@ -14,6 +14,11 @@
   --hp-player-blue: #4fa6ff;
   --hp-player-yellow: #ffd24f;
   --hp-player-purple: #c285ff;
+  --accent-add: #56d58d;
+  --chart-damage: #ff5b6e;
+  --chart-damage-received: #ff9c6a;
+  --chart-heal: #56d58d;
+  --chart-heal-received: #4fa6ff;
   --radius-md: 10px;
   --radius-lg: 14px;
   --space-2: 0.5rem;

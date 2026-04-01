@@ -1,5 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import './App.css'
+
+const StatsDetailModal = lazy(async () => {
+  const module = await import('./StatsDetailModal')
+  return { default: module.StatsDetailModal }
+})
 
 type ParticipantKind = 'player' | 'monster'
 type ActionType = 'damage' | 'heal'
@@ -130,6 +135,7 @@ function App() {
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false)
   const [editingParticipantId, setEditingParticipantId] = useState<string | null>(null)
   const [isApplyLocked, setIsApplyLocked] = useState<boolean>(false)
+  const [isStatsModalOpen, setIsStatsModalOpen] = useState<boolean>(false)
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
@@ -411,18 +417,23 @@ function App() {
 
   return (
     <main className="app">
-      <section className="panel">
-        <div className="row">
+      <section className="panel combat-panel">
+        <div className="combat-heading">
           <h2>Combat</h2>
-          <div className="actions-inline">
-            <button className="secondary" onClick={() => setIsAddModalOpen(true)}>
-              Ajouter un participant
+          <div className="combat-toolbar" role="toolbar" aria-label="Actions combat">
+            <button
+              type="button"
+              className="btn-sm btn-add"
+              title="Ajouter un participant"
+              onClick={() => setIsAddModalOpen(true)}
+            >
+              Ajouter
             </button>
-            <button onClick={handleStartCombat} disabled={participants.length < 2}>
-              Demarrer
+            <button type="button" className="btn-sm" onClick={handleStartCombat} disabled={participants.length < 2}>
+              Démarrer
             </button>
-            <button className="secondary" onClick={handleResetCombat}>
-              Reinitialiser
+            <button type="button" className="btn-sm secondary" onClick={handleResetCombat}>
+              Réinit.
             </button>
           </div>
         </div>
@@ -441,28 +452,36 @@ function App() {
           </div>
         )}
 
-        <form className="grid-form" onSubmit={handleApplyAction}>
-          <label>
-            Action
-            <select
-              value={actionForm.type}
-              onChange={(event) => setActionForm((previous) => ({ ...previous, type: event.target.value as ActionType }))}
-            >
-              <option value="damage">Degats</option>
-              <option value="heal">Soin</option>
-            </select>
-          </label>
-
-          <label>
-            Montant
-            <input
-              type="number"
-              min={1}
-              value={actionForm.amount}
-              onChange={(event) => setActionForm((previous) => ({ ...previous, amount: event.target.value }))}
-              required
-            />
-          </label>
+        <form className="combat-form" onSubmit={handleApplyAction}>
+          <div className="action-amount-row">
+            <div className="segmented" role="group" aria-label="Type d'action">
+              <button
+                type="button"
+                className={`segmented-btn ${actionForm.type === 'damage' ? 'is-active' : ''}`}
+                onClick={() => setActionForm((previous) => ({ ...previous, type: 'damage' }))}
+              >
+                Dégâts
+              </button>
+              <button
+                type="button"
+                className={`segmented-btn ${actionForm.type === 'heal' ? 'is-active' : ''}`}
+                onClick={() => setActionForm((previous) => ({ ...previous, type: 'heal' }))}
+              >
+                Soin
+              </button>
+            </div>
+            <label className="amount-field">
+              <span className="amount-label">Montant</span>
+              <input
+                className="input-amount"
+                type="number"
+                min={1}
+                value={actionForm.amount}
+                onChange={(event) => setActionForm((previous) => ({ ...previous, amount: event.target.value }))}
+                required
+              />
+            </label>
+          </div>
 
           <div className="targets-box">
             <p className="muted">Cibles (selection multiple, auto-soin autorise)</p>
@@ -479,12 +498,14 @@ function App() {
             </div>
           </div>
 
-          <button type="submit" disabled={!canAct || possibleTargets.length === 0 || isApplyLocked}>
-            Appliquer
-          </button>
-          <button type="button" className="secondary" onClick={handleNextTurn} disabled={!state.started}>
-            Participant suivant
-          </button>
+          <div className="combat-submit-row">
+            <button type="submit" className="btn-sm" disabled={!canAct || possibleTargets.length === 0 || isApplyLocked}>
+              Appliquer
+            </button>
+            <button type="button" className="btn-sm secondary" onClick={handleNextTurn} disabled={!state.started}>
+              Suivant
+            </button>
+          </div>
         </form>
       </section>
 
@@ -517,7 +538,12 @@ function App() {
       </section>
 
       <section className="panel">
-        <h2>Statistiques</h2>
+        <div className="stats-heading">
+          <h2>Statistiques</h2>
+          <button type="button" className="btn-sm secondary" onClick={() => setIsStatsModalOpen(true)}>
+            Plus de stats
+          </button>
+        </div>
         <div className="stats-grid">
           <div className="stat-card">
             <p className="muted">Plus de degats infliges</p>
@@ -575,6 +601,25 @@ function App() {
             </form>
           </div>
         </div>
+      )}
+
+      {isStatsModalOpen && (
+        <Suspense
+          fallback={
+            <div className="modal-backdrop">
+              <div className="modal">
+                <p className="muted">Chargement des graphiques…</p>
+              </div>
+            </div>
+          }
+        >
+          <StatsDetailModal
+            isOpen
+            onClose={() => setIsStatsModalOpen(false)}
+            events={state.events}
+            participants={participants.map((participant) => ({ id: participant.id, name: participant.name }))}
+          />
+        </Suspense>
       )}
 
       {editingParticipant && (

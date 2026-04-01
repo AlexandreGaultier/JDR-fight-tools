@@ -97,10 +97,140 @@ button.danger {
   flex-wrap: wrap;
 }
 
+.combat-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: nowrap;
+  margin-bottom: var(--space-3);
+}
+
+.combat-heading h2 {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.combat-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+  align-items: center;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
+}
+
+.btn-sm {
+  padding: 0.32rem 0.55rem;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.btn-add {
+  background: transparent;
+  color: var(--accent-add);
+  border-color: var(--accent-add);
+  border-style: dashed;
+  font-weight: 600;
+}
+
+.btn-add:hover {
+  background: rgba(86, 213, 141, 0.12);
+}
+
 .actions-inline {
   display: flex;
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+
+.combat-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.action-amount-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface-soft);
+}
+
+.segmented-btn {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 0.35rem 0.65rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.segmented-btn:hover {
+  color: var(--text);
+  background: rgba(106, 141, 255, 0.08);
+}
+
+.segmented-btn.is-active {
+  background: var(--primary);
+  color: #fff;
+}
+
+.segmented-btn.is-active:hover {
+  background: var(--primary);
+  color: #fff;
+}
+
+.amount-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: auto;
+  min-width: 0;
+}
+
+.amount-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.input-amount {
+  width: 4.5rem;
+  max-width: 28vw;
+  padding: 0.35rem 0.45rem;
+  font-size: 0.85rem;
+}
+
+.combat-submit-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.stats-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.stats-heading h2 {
+  margin: 0;
 }
 
 .active-card {
@@ -250,6 +380,11 @@ button.danger {
 @media (min-width: 700px) {
   .app {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .action-amount-row {
+    flex-wrap: nowrap;
+    align-items: center;
   }
 
   .grid-form {
