@@ -266,6 +266,55 @@ button.danger {
   cursor: pointer;
 }
 
+.participant-card.is-ko {
+  opacity: 0.78;
+  filter: grayscale(0.35);
+  background: rgba(255, 91, 110, 0.09);
+  border-color: rgba(255, 91, 110, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(255, 91, 110, 0.14);
+}
+
+.participant-card.is-ko.is-active {
+  opacity: 0.88;
+  border-color: var(--primary);
+  box-shadow: var(--shadow-focus), inset 0 0 0 1px rgba(255, 91, 110, 0.12);
+}
+
+.participant-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.participant-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  flex: 1 1 8rem;
+}
+
+.participant-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.participant-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
+
+.participant-meta-sep {
+  opacity: 0.55;
+}
+
 .participant-card.is-active {
   border-color: var(--primary);
   box-shadow: var(--shadow-focus);
@@ -375,6 +424,18 @@ button.danger {
   border-radius: var(--radius-md);
   padding: var(--space-3);
   background: var(--surface-soft);
+}
+
+.stat-card-detail {
+  font-size: 0.88rem;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.preset-hint {
+  font-size: 0.85rem;
+  margin: 0 0 var(--space-3);
+  line-height: 1.4;
 }
 
 @media (min-width: 700px) {

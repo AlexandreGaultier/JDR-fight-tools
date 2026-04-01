@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { findParticipantPreset, PARTICIPANT_PRESETS } from './participantPresets'
 import './App.css'
 
 const StatsDetailModal = lazy(async () => {
@@ -54,8 +55,8 @@ interface ActionForm {
 
 const STORAGE_KEY = 'jdr-fight-tools-v1'
 
-const initialAddForm: AddForm = { name: '', kind: 'player', hpCurrent: '10', hpMax: '10', initiative: '10' }
-const initialActionForm: ActionForm = { targetIds: [], amount: '1', type: 'damage' }
+const initialAddForm: AddForm = { name: '', kind: 'player', hpCurrent: '', hpMax: '', initiative: '' }
+const initialActionForm: ActionForm = { targetIds: [], amount: '', type: 'damage' }
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -189,8 +190,15 @@ function App() {
       setErrorMessage('Le nom est obligatoire.')
       return
     }
-    if (Number.isNaN(hpCurrent) || Number.isNaN(hpMax) || Number.isNaN(initiative)) {
-      setErrorMessage('HP et initiative doivent etre des nombres.')
+    if (
+      addForm.hpCurrent.trim() === '' ||
+      addForm.hpMax.trim() === '' ||
+      addForm.initiative.trim() === '' ||
+      Number.isNaN(hpCurrent) ||
+      Number.isNaN(hpMax) ||
+      Number.isNaN(initiative)
+    ) {
+      setErrorMessage("Remplis les HP (actuels et max) et l'initiative.")
       return
     }
     if (hpMax <= 0) {
@@ -227,8 +235,22 @@ function App() {
       setState((previous) => ({ ...previous, participants: updatedParticipants, nextOrder: previous.nextOrder + 1 }))
     }
 
-    setAddForm((previous) => ({ ...initialAddForm, kind: previous.kind }))
+    setAddForm(initialAddForm)
     setIsAddModalOpen(false)
+  }
+
+  function applyPresetForName(rawName: string): void {
+    const preset = findParticipantPreset(rawName)
+    if (!preset) {
+      return
+    }
+    setAddForm((previous) => ({
+      ...previous,
+      name: preset.name,
+      kind: preset.kind,
+      hpCurrent: String(preset.hpCurrent),
+      hpMax: String(preset.hpMax),
+    }))
   }
 
   function handleStartCombat(): void {
@@ -306,6 +328,10 @@ function App() {
       setErrorMessage('Aucun participant actif.')
       return
     }
+    if (actionForm.amount.trim() === '') {
+      setErrorMessage('Indique un montant.')
+      return
+    }
     const amount = Number(actionForm.amount)
     if (Number.isNaN(amount) || amount <= 0) {
       setErrorMessage('Le montant doit etre superieur a 0.')
@@ -339,6 +365,7 @@ function App() {
       }))
       return { ...previous, participants: updatedParticipants, events: [...previous.events, ...newEvents] }
     })
+    setActionForm((previous) => ({ ...previous, amount: '' }))
   }
 
   function handleNextTurn(): void {
@@ -369,15 +396,29 @@ function App() {
     const damageByTarget: Record<string, number> = {}
     const healBySource: Record<string, number> = {}
     const healByTarget: Record<string, number> = {}
+    let totalDamage = 0
+    let totalHeal = 0
+    let maxDamageEvent: CombatEvent | null = null
+    let maxHealEvent: CombatEvent | null = null
+
     for (const combatEvent of state.events) {
       if (combatEvent.type === 'damage') {
+        totalDamage += combatEvent.amount
         damageBySource[combatEvent.sourceId] = (damageBySource[combatEvent.sourceId] ?? 0) + combatEvent.amount
         damageByTarget[combatEvent.targetId] = (damageByTarget[combatEvent.targetId] ?? 0) + combatEvent.amount
-      } else {
-        healBySource[combatEvent.sourceId] = (healBySource[combatEvent.sourceId] ?? 0) + combatEvent.amount
-        healByTarget[combatEvent.targetId] = (healByTarget[combatEvent.targetId] ?? 0) + combatEvent.amount
+        if (!maxDamageEvent || combatEvent.amount > maxDamageEvent.amount) {
+          maxDamageEvent = combatEvent
+        }
+        continue
+      }
+      totalHeal += combatEvent.amount
+      healBySource[combatEvent.sourceId] = (healBySource[combatEvent.sourceId] ?? 0) + combatEvent.amount
+      healByTarget[combatEvent.targetId] = (healByTarget[combatEvent.targetId] ?? 0) + combatEvent.amount
+      if (!maxHealEvent || combatEvent.amount > maxHealEvent.amount) {
+        maxHealEvent = combatEvent
       }
     }
+
     const findTop = (map: Record<string, number>): { id: string; value: number } | null => {
       const entries = Object.entries(map)
       if (entries.length === 0) {
@@ -391,6 +432,11 @@ function App() {
       topDamageTarget: findTop(damageByTarget),
       topHealSource: findTop(healBySource),
       topHealTarget: findTop(healByTarget),
+      totalDamage,
+      totalHeal,
+      actionCount: state.events.length,
+      maxDamageEvent,
+      maxHealEvent,
     }
   }, [state.events])
 
@@ -425,7 +471,10 @@ function App() {
               type="button"
               className="btn-sm btn-add"
               title="Ajouter un participant"
-              onClick={() => setIsAddModalOpen(true)}
+              onClick={() => {
+                setAddForm(initialAddForm)
+                setIsAddModalOpen(true)
+              }}
             >
               Ajouter
             </button>
@@ -476,9 +525,10 @@ function App() {
                 className="input-amount"
                 type="number"
                 min={1}
+                inputMode="numeric"
+                placeholder="ex. 3"
                 value={actionForm.amount}
                 onChange={(event) => setActionForm((previous) => ({ ...previous, amount: event.target.value }))}
-                required
               />
             </label>
           </div>
@@ -515,19 +565,26 @@ function App() {
           {participants.length === 0 && <p className="muted">Aucun participant pour le moment.</p>}
           {participants.map((participant, index) => (
             <article
-              className={`participant-card ${index === safeTurnIndex && state.started ? 'is-active' : ''}`}
+              className={`participant-card ${index === safeTurnIndex && state.started ? 'is-active' : ''} ${!isAlive(participant) ? 'is-ko' : ''}`}
               key={participant.id}
               onClick={() => setEditingParticipantId(participant.id)}
             >
-              <div className="row">
-                <strong>{participant.name || 'Sans nom'}</strong>
-                {!isAlive(participant) && <span className="badge">KO</span>}
-              </div>
-              <div className="hp-line">
-                <span className="muted">
-                  {participant.hpCurrent}/{participant.hpMax} HP
-                </span>
-                <span className="muted">Init {participant.initiative}</span>
+              <div className="participant-top">
+                <div className="participant-name-row">
+                  <strong className="participant-name" title={participant.name || undefined}>
+                    {participant.name || 'Sans nom'}
+                  </strong>
+                  {!isAlive(participant) && <span className="badge">KO</span>}
+                </div>
+                <div className="participant-meta muted">
+                  <span>
+                    {participant.hpCurrent}/{participant.hpMax} HP
+                  </span>
+                  <span className="participant-meta-sep" aria-hidden="true">
+                    ·
+                  </span>
+                  <span>Init {participant.initiative}</span>
+                </div>
               </div>
               <div className={`hp-bar ${getParticipantBarClass(participant)}`}>
                 <div className="hp-bar-fill" style={{ width: `${clamp((participant.hpCurrent / participant.hpMax) * 100, 0, 100)}%` }} />
@@ -545,6 +602,34 @@ function App() {
           </button>
         </div>
         <div className="stats-grid">
+          <div className="stat-card">
+            <p className="muted">Total degats (PV)</p>
+            <p>{stats.totalDamage > 0 ? stats.totalDamage : '—'}</p>
+          </div>
+          <div className="stat-card">
+            <p className="muted">Total soins (PV)</p>
+            <p>{stats.totalHeal > 0 ? stats.totalHeal : '—'}</p>
+          </div>
+          <div className="stat-card">
+            <p className="muted">Actions enregistrees</p>
+            <p>{stats.actionCount}</p>
+          </div>
+          <div className="stat-card">
+            <p className="muted">Plus gros coup (degats)</p>
+            <p className="stat-card-detail">
+              {stats.maxDamageEvent
+                ? `${stats.maxDamageEvent.amount} PV — ${participantNameById(stats.maxDamageEvent.sourceId)} → ${participantNameById(stats.maxDamageEvent.targetId)}`
+                : 'Aucune donnee'}
+            </p>
+          </div>
+          <div className="stat-card">
+            <p className="muted">Plus gros soin (un coup)</p>
+            <p className="stat-card-detail">
+              {stats.maxHealEvent
+                ? `${stats.maxHealEvent.amount} PV — ${participantNameById(stats.maxHealEvent.sourceId)} → ${participantNameById(stats.maxHealEvent.targetId)}`
+                : 'Aucune donnee'}
+            </p>
+          </div>
           <div className="stat-card">
             <p className="muted">Plus de degats infliges</p>
             <p>{stats.topDamageSource ? `${participantNameById(stats.topDamageSource.id)} (${stats.topDamageSource.value})` : 'Aucune donnee'}</p>
@@ -573,10 +658,27 @@ function App() {
                 Fermer
               </button>
             </div>
+            <p className="muted preset-hint">
+              Choisis un nom connu (suggestions ci-dessous) puis quitte le champ : les HP et le type se remplissent tout seuls. Il reste à saisir
+              l&apos;initiative.
+            </p>
+            <datalist id="participant-preset-datalist">
+              {PARTICIPANT_PRESETS.map((preset) => (
+                <option key={preset.name} value={preset.name} />
+              ))}
+            </datalist>
             <form className="grid-form" onSubmit={handleAddParticipant}>
               <label>
                 Nom
-                <input value={addForm.name} onChange={(event) => setAddForm((previous) => ({ ...previous, name: event.target.value }))} required />
+                <input
+                  list="participant-preset-datalist"
+                  autoComplete="off"
+                  placeholder="ex. Aelyn ou Brokk Ferkang"
+                  value={addForm.name}
+                  onChange={(event) => setAddForm((previous) => ({ ...previous, name: event.target.value }))}
+                  onBlur={(event) => applyPresetForName(event.target.value)}
+                  required
+                />
               </label>
               <label>
                 Type
@@ -587,15 +689,33 @@ function App() {
               </label>
               <label>
                 HP actuels
-                <input type="number" min={0} value={addForm.hpCurrent} onChange={(event) => setAddForm((previous) => ({ ...previous, hpCurrent: event.target.value }))} required />
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="ex. 10"
+                  value={addForm.hpCurrent}
+                  onChange={(event) => setAddForm((previous) => ({ ...previous, hpCurrent: event.target.value }))}
+                />
               </label>
               <label>
                 HP max
-                <input type="number" min={1} value={addForm.hpMax} onChange={(event) => setAddForm((previous) => ({ ...previous, hpMax: event.target.value }))} required />
+                <input
+                  type="number"
+                  min={1}
+                  placeholder="ex. 10"
+                  value={addForm.hpMax}
+                  onChange={(event) => setAddForm((previous) => ({ ...previous, hpMax: event.target.value }))}
+                />
               </label>
               <label>
                 Initiative
-                <input type="number" value={addForm.initiative} onChange={(event) => setAddForm((previous) => ({ ...previous, initiative: event.target.value }))} required />
+                <input
+                  type="number"
+                  placeholder="ex. 15"
+                  inputMode="numeric"
+                  value={addForm.initiative}
+                  onChange={(event) => setAddForm((previous) => ({ ...previous, initiative: event.target.value }))}
+                />
               </label>
               <button type="submit">Ajouter</button>
             </form>
