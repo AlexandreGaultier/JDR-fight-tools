@@ -365,7 +365,7 @@ function App() {
       }))
       return { ...previous, participants: updatedParticipants, events: [...previous.events, ...newEvents] }
     })
-    setActionForm((previous) => ({ ...previous, amount: '' }))
+    setActionForm((previous) => ({ ...previous, amount: '', targetIds: [] }))
   }
 
   function handleNextTurn(): void {
@@ -375,6 +375,7 @@ function App() {
     const nextIndex = nextLivingIndex(participants, safeTurnIndex)
     const wrapped = nextIndex <= safeTurnIndex
     setState((previous) => ({ ...previous, currentTurnIndex: nextIndex, round: wrapped ? previous.round + 1 : previous.round }))
+    setActionForm((previous) => ({ ...previous, targetIds: [] }))
   }
 
   function participantNameById(id: string): string {
@@ -492,10 +493,12 @@ function App() {
         {errorMessage && <p className="error">{errorMessage}</p>}
 
         {activeParticipant && (
-          <div className="active-card">
-            <p className="muted">Participant actif</p>
-            <h3>{activeParticipant.name}</h3>
-            <p>
+          <div className="active-card active-card-compact">
+            <p className="active-line1">
+              <span className="muted">Participant actif :</span>{' '}
+              <strong className="active-name">{activeParticipant.name}</strong>
+            </p>
+            <p className="active-line2 muted">
               {activeParticipant.hpCurrent}/{activeParticipant.hpMax} HP - Initiative {activeParticipant.initiative}
             </p>
           </div>
@@ -540,7 +543,7 @@ function App() {
               {possibleTargets.map((target) => (
                 <label key={target.id} className="target-item">
                   <input type="checkbox" checked={actionForm.targetIds.includes(target.id)} onChange={() => toggleTarget(target.id)} />
-                  <span>
+                  <span className={`target-label ${getParticipantBarClass(target)}`}>
                     {target.name} ({target.hpCurrent}/{target.hpMax})
                   </span>
                 </label>

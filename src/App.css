@@ -241,6 +241,28 @@ button.danger {
   padding: var(--space-3);
 }
 
+.active-card-compact {
+  margin-block: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.active-line1 {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.3;
+}
+
+.active-line2 {
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.3;
+}
+
+.active-name {
+  color: var(--text);
+  font-weight: 700;
+}
+
 .winner {
   color: var(--success);
   margin-top: var(--space-2);
@@ -391,6 +413,30 @@ button.danger {
   align-items: center;
   gap: 0.6rem;
   color: var(--text);
+}
+
+.target-label {
+  font-weight: 600;
+}
+
+.target-label.monster {
+  color: var(--hp-monster);
+}
+
+.target-label.player-green {
+  color: var(--hp-player-green);
+}
+
+.target-label.player-blue {
+  color: var(--hp-player-blue);
+}
+
+.target-label.player-yellow {
+  color: var(--hp-player-yellow);
+}
+
+.target-label.player-purple {
+  color: var(--hp-player-purple);
 }
 
 .modal-backdrop {
