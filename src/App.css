@@ -574,8 +574,8 @@ button.danger {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .panel:first-child,
-  .panel:nth-child(3) {
+  /* Toutes les cartes principales sur toute la largeur (comme Combat) */
+  .app > .panel {
     grid-column: 1 / -1;
   }
 }
