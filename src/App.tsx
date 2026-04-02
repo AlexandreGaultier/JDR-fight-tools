@@ -1,5 +1,17 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { findParticipantPreset, PARTICIPANT_PRESETS } from './participantPresets'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  findParticipantPreset,
+  normalizePresetName,
+  PARTICIPANT_PRESETS,
+  type ParticipantPreset,
+} from './participantPresets'
+import {
+  exportUserPresetsToFile,
+  loadUserPresets,
+  parseUserPresetsFromJson,
+  saveUserPresets,
+  upsertUserPreset,
+} from './userPresetStorage'
 import './App.css'
 
 const StatsDetailModal = lazy(async () => {
@@ -137,10 +149,18 @@ function App() {
   const [editingParticipantId, setEditingParticipantId] = useState<string | null>(null)
   const [isApplyLocked, setIsApplyLocked] = useState<boolean>(false)
   const [isStatsModalOpen, setIsStatsModalOpen] = useState<boolean>(false)
+  const [userPresets, setUserPresets] = useState<ParticipantPreset[]>(() => loadUserPresets())
+  const [savePresetOnAdd, setSavePresetOnAdd] = useState<boolean>(false)
+  const [addModalFeedback, setAddModalFeedback] = useState<{ text: string; variant: 'success' | 'error' } | null>(null)
+  const importPresetsInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   }, [state])
+
+  useEffect(() => {
+    saveUserPresets(userPresets)
+  }, [userPresets])
 
   useEffect(() => {
     if (!isApplyLocked) {
@@ -235,12 +255,24 @@ function App() {
       setState((previous) => ({ ...previous, participants: updatedParticipants, nextOrder: previous.nextOrder + 1 }))
     }
 
+    if (savePresetOnAdd) {
+      setUserPresets((previous) =>
+        upsertUserPreset(previous, {
+          name,
+          kind: addForm.kind,
+          hpMax,
+          hpCurrent,
+        }),
+      )
+    }
+
     setAddForm(initialAddForm)
+    setSavePresetOnAdd(false)
     setIsAddModalOpen(false)
   }
 
   function applyPresetForName(rawName: string): void {
-    const preset = findParticipantPreset(rawName)
+    const preset = findParticipantPreset(rawName, userPresets)
     if (!preset) {
       return
     }
@@ -441,6 +473,17 @@ function App() {
     }
   }, [state.events])
 
+  const mergedPresetOptions = useMemo(() => {
+    const map = new Map<string, ParticipantPreset>()
+    for (const preset of PARTICIPANT_PRESETS) {
+      map.set(normalizePresetName(preset.name), preset)
+    }
+    for (const preset of userPresets) {
+      map.set(normalizePresetName(preset.name), preset)
+    }
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'fr'))
+  }, [userPresets])
+
   const playerColorById = useMemo(() => {
     const colors = ['player-green', 'player-blue', 'player-yellow', 'player-purple']
     const map: Record<string, string> = {}
@@ -462,6 +505,34 @@ function App() {
     return playerColorById[participant.id] ?? 'player-green'
   }
 
+  function handleExportUserPresets(): void {
+    exportUserPresetsToFile(userPresets)
+    setAddModalFeedback({ text: 'Fichier JSON téléchargé.', variant: 'success' })
+  }
+
+  function handleImportUserPresetsFile(event: React.ChangeEvent<HTMLInputElement>): void {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) {
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const text = String(reader.result)
+        const next = parseUserPresetsFromJson(text)
+        setUserPresets(next)
+        setAddModalFeedback({ text: `Import réussi : ${next.length} entrée(s).`, variant: 'success' })
+      } catch (error) {
+        setAddModalFeedback({
+          text: error instanceof Error ? error.message : 'Import impossible.',
+          variant: 'error',
+        })
+      }
+    }
+    reader.readAsText(file)
+  }
+
   return (
     <main className="app">
       <section className="panel combat-panel">
@@ -474,6 +545,8 @@ function App() {
               title="Ajouter un participant"
               onClick={() => {
                 setAddForm(initialAddForm)
+                setSavePresetOnAdd(false)
+                setAddModalFeedback(null)
                 setIsAddModalOpen(true)
               }}
             >
@@ -489,7 +562,6 @@ function App() {
         </div>
 
         <p className="muted">Tour n°{state.round}</p>
-        {winnerLabel && <p className="winner">{winnerLabel}</p>}
         {errorMessage && <p className="error">{errorMessage}</p>}
 
         {activeParticipant && (
@@ -600,9 +672,11 @@ function App() {
       <section className="panel">
         <div className="stats-heading">
           <h2>Statistiques</h2>
-          <button type="button" className="btn-sm secondary" onClick={() => setIsStatsModalOpen(true)}>
-            Plus de stats
-          </button>
+          {state.events.length > 0 && (
+            <button type="button" className="btn-sm secondary" onClick={() => setIsStatsModalOpen(true)}>
+              Plus de stats
+            </button>
+          )}
         </div>
         <div className="stats-grid">
           <div className="stat-card">
@@ -654,10 +728,10 @@ function App() {
 
       {isAddModalOpen && (
         <div className="modal-backdrop" onClick={() => setIsAddModalOpen(false)}>
-          <div className="modal" onClick={(event) => event.stopPropagation()}>
-            <div className="row">
+          <div className="modal modal-add-participant" onClick={(event) => event.stopPropagation()}>
+            <div className="row modal-title-row">
               <h3>Ajouter un participant</h3>
-              <button className="secondary" onClick={() => setIsAddModalOpen(false)}>
+              <button type="button" className="secondary btn-sm btn-modal-close" onClick={() => setIsAddModalOpen(false)}>
                 Fermer
               </button>
             </div>
@@ -665,9 +739,29 @@ function App() {
               Choisis un nom connu (suggestions ci-dessous) puis quitte le champ : les HP et le type se remplissent tout seuls. Il reste à saisir
               l&apos;initiative.
             </p>
+            <div className="user-presets-toolbar">
+              <button type="button" className="btn-sm secondary" onClick={handleExportUserPresets}>
+                Exporter mes presets
+              </button>
+              <button type="button" className="btn-sm secondary" onClick={() => importPresetsInputRef.current?.click()}>
+                Importer des presets
+              </button>
+              <input
+                ref={importPresetsInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="visually-hidden"
+                aria-hidden="true"
+                onChange={handleImportUserPresetsFile}
+              />
+              <span className="muted user-presets-count">{userPresets.length} perso(s) enregistré(s)</span>
+            </div>
+            {addModalFeedback && (
+              <p className={`add-modal-feedback ${addModalFeedback.variant === 'error' ? 'is-error' : ''}`}>{addModalFeedback.text}</p>
+            )}
             <datalist id="participant-preset-datalist">
-              {PARTICIPANT_PRESETS.map((preset) => (
-                <option key={preset.name} value={preset.name} />
+              {mergedPresetOptions.map((preset) => (
+                <option key={`${normalizePresetName(preset.name)}-${preset.kind}`} value={preset.name} />
               ))}
             </datalist>
             <form className="grid-form" onSubmit={handleAddParticipant}>
@@ -720,6 +814,14 @@ function App() {
                   onChange={(event) => setAddForm((previous) => ({ ...previous, initiative: event.target.value }))}
                 />
               </label>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={savePresetOnAdd}
+                  onChange={(event) => setSavePresetOnAdd(event.target.checked)}
+                />
+                <span>Enregistrer dans mes presets (navigateur)</span>
+              </label>
               <button type="submit">Ajouter</button>
             </form>
           </div>
@@ -748,9 +850,9 @@ function App() {
       {editingParticipant && (
         <div className="modal-backdrop" onClick={() => setEditingParticipantId(null)}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
-            <div className="row">
+            <div className="row modal-title-row">
               <h3>Modifier {editingParticipant.name}</h3>
-              <button className="secondary" onClick={() => setEditingParticipantId(null)}>
+              <button type="button" className="secondary btn-sm btn-modal-close" onClick={() => setEditingParticipantId(null)}>
                 Fermer
               </button>
             </div>

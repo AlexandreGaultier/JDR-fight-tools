@@ -484,6 +484,74 @@ button.danger {
   line-height: 1.4;
 }
 
+.modal-title-row {
+  align-items: center;
+  margin-bottom: var(--space-2);
+}
+
+.modal-title-row h3 {
+  margin: 0;
+}
+
+.btn-modal-close {
+  flex-shrink: 0;
+}
+
+.user-presets-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: var(--space-2);
+}
+
+.user-presets-count {
+  font-size: 0.8rem;
+  width: 100%;
+}
+
+@media (min-width: 500px) {
+  .user-presets-count {
+    width: auto;
+    margin-left: auto;
+  }
+}
+
+.add-modal-feedback {
+  margin: 0 0 var(--space-2);
+  font-size: 0.85rem;
+  color: var(--success);
+}
+
+.add-modal-feedback.is-error {
+  color: var(--danger);
+}
+
+.checkbox-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.checkbox-row input {
+  margin-top: 0.25rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 @media (min-width: 700px) {
   .app {
     grid-template-columns: 1fr 1fr;

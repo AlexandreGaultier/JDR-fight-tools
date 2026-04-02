@@ -32,10 +32,18 @@ export function normalizePresetName(value: string): string {
     .toLowerCase()
 }
 
-export function findParticipantPreset(name: string): ParticipantPreset | undefined {
+/** Cherche d'abord dans les presets perso (localStorage), puis dans la liste de base. */
+export function findParticipantPreset(
+  name: string,
+  userPresets: readonly ParticipantPreset[] = [],
+): ParticipantPreset | undefined {
   const key = normalizePresetName(name)
   if (!key) {
     return undefined
+  }
+  const fromUser = userPresets.find((preset) => normalizePresetName(preset.name) === key)
+  if (fromUser) {
+    return fromUser
   }
   return PARTICIPANT_PRESETS.find((preset) => normalizePresetName(preset.name) === key)
 }
