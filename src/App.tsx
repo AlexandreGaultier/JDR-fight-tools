@@ -13,6 +13,18 @@ import {
   upsertUserPreset,
 } from './userPresetStorage'
 import { normalizeParticipantStatuses, PRESET_STATUSES, type PresetStatusId } from './statusPresets'
+import {
+  attackSummaryLabel,
+  BONUS_STAT_OPTIONS,
+  emptyCombatSheet,
+  formatEsquiveLabel,
+  normalizeCombatSheet,
+  participantCombatFromStorage,
+  rollCombatAttackDamage,
+  type CombatAttack,
+  type CombatBonusStat,
+  type CombatSheet,
+} from './combatSheet'
 import './App.css'
 
 const StatsDetailModal = lazy(async () => {
@@ -32,6 +44,8 @@ interface Participant {
   hpMax: number
   initiative: number
   statuses: PresetStatusId[]
+  /** Fiche combat MJ (joueur ou monstre). */
+  combat?: CombatSheet
 }
 
 interface CombatEvent {
@@ -59,6 +73,7 @@ interface AddForm {
   hpCurrent: string
   hpMax: string
   initiative: string
+  combat: CombatSheet
 }
 
 interface ActionForm {
@@ -69,7 +84,14 @@ interface ActionForm {
 
 const STORAGE_KEY = 'jdr-fight-tools-v1'
 
-const initialAddForm: AddForm = { name: '', kind: 'player', hpCurrent: '', hpMax: '', initiative: '' }
+const initialAddForm: AddForm = {
+  name: '',
+  kind: 'player',
+  hpCurrent: '',
+  hpMax: '',
+  initiative: '',
+  combat: emptyCombatSheet('player'),
+}
 const initialActionForm: ActionForm = { targetIds: [], amount: '', type: 'damage' }
 
 function clamp(value: number, min: number, max: number): number {
@@ -114,6 +136,20 @@ function getWinnerLabel(participants: Participant[]): string | null {
   return null
 }
 
+function previousLivingIndex(participants: Participant[], fromIndex: number): number {
+  if (participants.length === 0) {
+    return 0
+  }
+  const safeFromIndex = getSafeTurnIndex(participants, fromIndex)
+  for (let step = 1; step <= participants.length; step += 1) {
+    const candidate = (safeFromIndex - step + participants.length) % participants.length
+    if (isAlive(participants[candidate])) {
+      return candidate
+    }
+  }
+  return safeFromIndex
+}
+
 function nextLivingIndex(participants: Participant[], fromIndex: number): number {
   if (participants.length === 0) {
     return 0
@@ -128,6 +164,272 @@ function nextLivingIndex(participants: Participant[], fromIndex: number): number
   return safeFromIndex
 }
 
+function clampCaracInput(eventValue: string, fallback: number): number {
+  const n = Number(eventValue)
+  const v = Number.isFinite(n) ? Math.round(n) : fallback
+  return Math.min(99, Math.max(-99, v))
+}
+
+function clampDefenseArmureInput(eventValue: string, fallback: number): number {
+  const n = Number(eventValue)
+  const v = Number.isFinite(n) ? Math.round(n) : fallback
+  return Math.min(999, Math.max(0, v))
+}
+
+function CombatSheetFields({
+  participantKind,
+  sheet,
+  onSheetChange,
+}: {
+  participantKind: ParticipantKind
+  sheet: CombatSheet
+  onSheetChange: (next: CombatSheet) => void
+}) {
+  function patch(partial: Partial<CombatSheet>): void {
+    onSheetChange({ ...sheet, ...partial })
+  }
+
+  function toggleEsquive(face: number): void {
+    const set = new Set(sheet.esquiveOn)
+    if (set.has(face)) {
+      set.delete(face)
+    } else {
+      set.add(face)
+    }
+    patch({ esquiveOn: [...set].sort((a, b) => a - b) })
+  }
+
+  function patchAttack(attackId: string, partial: Partial<CombatAttack>): void {
+    patch({
+      attacks: sheet.attacks.map((attack) => (attack.id === attackId ? { ...attack, ...partial } : attack)),
+    })
+  }
+
+  function addAttackRow(): void {
+    patch({
+      attacks: [
+        ...sheet.attacks,
+        {
+          id: crypto.randomUUID(),
+          name: `Attaque ${sheet.attacks.length + 1}`,
+          portee: '',
+          diceCount: 1,
+          diceSides: 8,
+          flatBonus: 0,
+          bonusStat: 'none',
+        },
+      ],
+    })
+  }
+
+  function removeAttackRow(attackId: string): void {
+    patch({ attacks: sheet.attacks.filter((attack) => attack.id !== attackId) })
+  }
+
+  function num(v: string, fallback: number): number {
+    const n = Number(v)
+    return Number.isFinite(n) ? n : fallback
+  }
+
+  const iaValue = sheet.combatIA ?? 0
+
+  return (
+    <div className="monster-sheet-fields">
+      <p className="muted monster-sheet-section-title">Caractéristiques</p>
+      <div className="monster-stats-grid">
+        <label>
+          Puissance
+          <input
+            type="number"
+            min={-99}
+            max={99}
+            value={sheet.puissance}
+            onChange={(event) => patch({ puissance: clampCaracInput(event.target.value, sheet.puissance) })}
+          />
+        </label>
+        <label>
+          Vaillance
+          <input
+            type="number"
+            min={-99}
+            max={99}
+            value={sheet.vaillance}
+            onChange={(event) => patch({ vaillance: clampCaracInput(event.target.value, sheet.vaillance) })}
+          />
+        </label>
+        <label>
+          Agilité
+          <input
+            type="number"
+            min={-99}
+            max={99}
+            value={sheet.agilite}
+            onChange={(event) => patch({ agilite: clampCaracInput(event.target.value, sheet.agilite) })}
+          />
+        </label>
+        <label>
+          Instinct
+          <input
+            type="number"
+            min={-99}
+            max={99}
+            value={sheet.instinct}
+            onChange={(event) => patch({ instinct: clampCaracInput(event.target.value, sheet.instinct) })}
+          />
+        </label>
+        <label>
+          Intelligence
+          <input
+            type="number"
+            min={-99}
+            max={99}
+            value={sheet.intelligence}
+            onChange={(event) => patch({ intelligence: clampCaracInput(event.target.value, sheet.intelligence) })}
+          />
+        </label>
+      </div>
+
+      <p className="muted monster-sheet-section-title">Protection</p>
+      <div className="monster-stats-grid monster-stats-grid--tight">
+        <label>
+          Défense (min. 0)
+          <input
+            type="number"
+            min={0}
+            max={999}
+            value={sheet.defense}
+            onChange={(event) => patch({ defense: clampDefenseArmureInput(event.target.value, sheet.defense) })}
+          />
+        </label>
+        <label>
+          Armure (min. 0)
+          <input
+            type="number"
+            min={0}
+            max={999}
+            value={sheet.armure}
+            onChange={(event) => patch({ armure: clampDefenseArmureInput(event.target.value, sheet.armure) })}
+          />
+        </label>
+      </div>
+
+      <fieldset className="monster-esquive-fieldset">
+        <legend className="muted">Esquive (d6 — faces réussies)</legend>
+        <div className="monster-esquive-row" role="group" aria-label="Faces d'esquive sur le dé 6">
+          {[1, 2, 3, 4, 5, 6].map((face) => {
+            const on = sheet.esquiveOn.includes(face)
+            return (
+              <button
+                key={face}
+                type="button"
+                className={`esquive-face-btn ${on ? 'is-on' : ''}`}
+                aria-pressed={on}
+                onClick={() => toggleEsquive(face)}
+              >
+                {face}
+              </button>
+            )
+          })}
+        </div>
+        <p className="muted esquive-hint">Sélection : {formatEsquiveLabel(sheet.esquiveOn)}</p>
+      </fieldset>
+
+      {participantKind === 'monster' && (
+        <label className="monster-ia-label">
+          IA de combat (0–3)
+          <input
+            type="number"
+            min={0}
+            max={3}
+            className="monster-ia-number"
+            value={iaValue}
+            onChange={(event) => patch({ combatIA: Math.min(3, Math.max(0, Math.round(num(event.target.value, 0)))) })}
+          />
+        </label>
+      )}
+
+      <div className="monster-attacks-block">
+        <div className="monster-attacks-header">
+          <p className="muted monster-sheet-section-title">Attaques</p>
+          <button type="button" className="btn-sm secondary" onClick={addAttackRow}>
+            + Attaque
+          </button>
+        </div>
+        {sheet.attacks.length === 0 && <p className="muted monster-attacks-empty">Aucune attaque — ajoute-en une ou laisse vide.</p>}
+        <div className="monster-attacks-list">
+          {sheet.attacks.map((attack) => (
+            <div key={attack.id} className="monster-attack-row">
+              <label className="monster-attack-name">
+                Nom
+                <input
+                  value={attack.name}
+                  onChange={(event) => patchAttack(attack.id, { name: event.target.value })}
+                  placeholder="Morsure"
+                />
+              </label>
+              <label className="monster-attack-portee">
+                Portée
+                <input
+                  value={attack.portee}
+                  onChange={(event) => patchAttack(attack.id, { portee: event.target.value })}
+                  placeholder="CaC, CP, MP…"
+                  maxLength={12}
+                />
+              </label>
+              <label className="monster-attack-dice">
+                Dés
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={attack.diceCount}
+                  onChange={(event) => patchAttack(attack.id, { diceCount: Math.min(30, Math.max(1, Math.round(num(event.target.value, 1)))) })}
+                />
+              </label>
+              <label className="monster-attack-dice">
+                Faces
+                <input
+                  type="number"
+                  min={2}
+                  max={100}
+                  value={attack.diceSides}
+                  onChange={(event) => patchAttack(attack.id, { diceSides: Math.min(100, Math.max(2, Math.round(num(event.target.value, 8)))) })}
+                />
+              </label>
+              <label className="monster-attack-flat">
+                Fixe
+                <input
+                  type="number"
+                  min={-50}
+                  max={50}
+                  value={attack.flatBonus}
+                  onChange={(event) => patchAttack(attack.id, { flatBonus: Math.min(50, Math.max(-50, Math.round(num(event.target.value, 0)))) })}
+                />
+              </label>
+              <label className="monster-attack-stat">
+                Bonus carac.
+                <select
+                  value={attack.bonusStat}
+                  onChange={(event) => patchAttack(attack.id, { bonusStat: event.target.value as CombatBonusStat })}
+                >
+                  {BONUS_STAT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button type="button" className="btn-sm secondary danger-text monster-attack-remove" onClick={() => removeAttackRow(attack.id)}>
+                Retirer
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const [state, setState] = useState<CombatState>(() => {
     try {
@@ -137,9 +439,20 @@ function App() {
       }
       const parsed = JSON.parse(raw) as CombatState
       const safeParticipants = Array.isArray(parsed.participants)
-        ? parsed.participants.map((participant) => ({
-            ...participant,
+        ? parsed.participants.map((participant: Participant & { statuses?: unknown; combat?: unknown; monster?: unknown }) => ({
+            id: participant.id,
+            order: participant.order,
+            name: participant.name,
+            kind: participant.kind,
+            hpCurrent: participant.hpCurrent,
+            hpMax: participant.hpMax,
+            initiative: participant.initiative,
             statuses: normalizeParticipantStatuses(participant.statuses),
+            combat: participantCombatFromStorage({
+              kind: participant.kind,
+              combat: participant.combat,
+              monster: participant.monster,
+            }),
           }))
         : []
 
@@ -169,6 +482,13 @@ function App() {
   const importPresetsInputRef = useRef<HTMLInputElement>(null)
   const initiativeRollFeedbackClearRef = useRef<number | null>(null)
   const [initiativeRollAnimating, setInitiativeRollAnimating] = useState(false)
+  const [combatDiceFeedback, setCombatDiceFeedback] = useState<{
+    participantId: string
+    attackId: string
+    attackName: string
+    detailLines: string[]
+    total: number
+  } | null>(null)
 
   function playInitiativeRollFeedback(): void {
     if (initiativeRollFeedbackClearRef.current !== null) {
@@ -216,6 +536,10 @@ function App() {
   const activeParticipant = participants[safeTurnIndex] ?? null
   const winnerLabel = getWinnerLabel(participants)
   const canAct = state.started && !winnerLabel && activeParticipant && isAlive(activeParticipant)
+
+  useEffect(() => {
+    setCombatDiceFeedback(null)
+  }, [activeParticipant?.id])
 
   const possibleTargets = useMemo(() => {
     if (!state.started) {
@@ -284,6 +608,7 @@ function App() {
       hpMax,
       initiative,
       statuses: [],
+      combat: normalizeCombatSheet(addForm.combat, addForm.kind),
     }
 
     const updatedParticipants = [...participants, newParticipant]
@@ -363,9 +688,23 @@ function App() {
         if (field === 'kind') {
           const newKind = value as ParticipantKind
           if (newKind === 'monster') {
-            return { ...participant, kind: newKind, initiative: rollMonsterInitiative() }
+            const baseCombat = participant.combat ?? emptyCombatSheet('player')
+            return {
+              ...participant,
+              kind: newKind,
+              initiative: rollMonsterInitiative(),
+              combat: normalizeCombatSheet({ ...baseCombat, combatIA: baseCombat.combatIA ?? 0 }, 'monster'),
+            }
           }
-          return { ...participant, kind: newKind }
+          const baseCombat = participant.combat
+          return {
+            ...participant,
+            kind: newKind,
+            combat:
+              baseCombat !== undefined
+                ? normalizeCombatSheet({ ...baseCombat, combatIA: undefined }, 'player')
+                : undefined,
+          }
         }
         const numeric = Number(value)
         if (Number.isNaN(numeric)) {
@@ -386,6 +725,17 @@ function App() {
       const newTurnIndex = sorted.findIndex((participant) => participant.id === activeId)
       return { ...previous, participants: sorted, currentTurnIndex: newTurnIndex >= 0 ? newTurnIndex : 0 }
     })
+  }
+
+  function updateParticipantCombat(participantId: string, nextSheet: CombatSheet): void {
+    setState((previous) => ({
+      ...previous,
+      participants: previous.participants.map((participant) =>
+        participant.id === participantId
+          ? { ...participant, combat: normalizeCombatSheet(nextSheet, participant.kind) }
+          : participant,
+      ),
+    }))
   }
 
   function handleDeleteParticipant(participantId: string): void {
@@ -417,10 +767,14 @@ function App() {
     }))
   }
 
-  function renderStatusToggleStrip(participantId: string, active: readonly PresetStatusId[], variant: 'card' | 'compact') {
+  function renderStatusToggleStrip(
+    participantId: string,
+    active: readonly PresetStatusId[],
+    variant: 'card' | 'compact' | 'editModal',
+  ) {
     return (
       <div
-        className={`status-toggle-strip ${variant === 'compact' ? 'status-toggle-strip--compact' : ''}`}
+        className={`status-toggle-strip ${variant === 'compact' ? 'status-toggle-strip--compact' : ''} ${variant === 'editModal' ? 'status-toggle-strip--edit-modal' : ''}`}
         onClick={(event) => event.stopPropagation()}
         role="group"
         aria-label="Statuts"
@@ -442,6 +796,27 @@ function App() {
         })}
       </div>
     )
+  }
+
+  function handleRollCombatAttack(participant: Participant, attack: CombatAttack): void {
+    const sheet = participant.combat ?? emptyCombatSheet(participant.kind)
+    const result = rollCombatAttackDamage(attack, sheet)
+    const diceDetail =
+      result.rolls.length === 1 ? `${result.rolls[0]}` : `[${result.rolls.join(', ')}]`
+    const detailLines: string[] = [`Dés ${attack.diceCount}d${attack.diceSides} : ${diceDetail} → ${result.diceSum}`]
+    if (result.flatBonus !== 0) {
+      detailLines.push(`Fixe : ${result.flatBonus >= 0 ? '+' : ''}${result.flatBonus}`)
+    }
+    if (result.statBonus !== 0 && attack.bonusStat !== 'none') {
+      detailLines.push(`${result.statLabel} : ${result.statBonus >= 0 ? '+' : ''}${result.statBonus}`)
+    }
+    setCombatDiceFeedback({
+      participantId: participant.id,
+      attackId: attack.id,
+      attackName: attack.name.trim() || 'Attaque',
+      detailLines,
+      total: result.total,
+    })
   }
 
   function handleApplyAction(event: React.FormEvent<HTMLFormElement>): void {
@@ -495,6 +870,14 @@ function App() {
     setActionForm((previous) => ({ ...previous, amount: '', targetIds: [] }))
   }
 
+  function handlePreviousTurn(): void {
+    if (!state.started || participants.length === 0) {
+      return
+    }
+    const previousIndex = previousLivingIndex(participants, safeTurnIndex)
+    setState((previous) => ({ ...previous, currentTurnIndex: previousIndex, round: previous.round }))
+  }
+
   function handleNextTurn(): void {
     if (!state.started || participants.length === 0) {
       return
@@ -519,6 +902,11 @@ function App() {
   }
 
   const editingParticipant = editingParticipantId ? participants.find((participant) => participant.id === editingParticipantId) ?? null : null
+
+  const combatTurnSheet =
+    state.started && activeParticipant && isAlive(activeParticipant) && activeParticipant.combat
+      ? { participant: activeParticipant, sheet: activeParticipant.combat }
+      : null
   const stats = useMemo(() => {
     const damageBySource: Record<string, number> = {}
     const damageByTarget: Record<string, number> = {}
@@ -672,6 +1060,60 @@ function App() {
           </div>
         )}
 
+        {combatTurnSheet && (
+          <div className="monster-combat-sheet">
+            <p className="monster-combat-sheet-title muted">
+              {combatTurnSheet.participant.kind === 'monster' ? 'Fiche monstre — tour MJ' : 'Fiche joueur — tour MJ'}
+            </p>
+            <div className="monster-combat-stats-readonly">
+              <span title="Puissance">Pui {combatTurnSheet.sheet.puissance}</span>
+              <span title="Vaillance">Vai {combatTurnSheet.sheet.vaillance}</span>
+              <span title="Agilité">Agi {combatTurnSheet.sheet.agilite}</span>
+              <span title="Instinct">Ins {combatTurnSheet.sheet.instinct}</span>
+              <span title="Intelligence">Int {combatTurnSheet.sheet.intelligence}</span>
+              <span title="Défense">Déf {combatTurnSheet.sheet.defense}</span>
+              <span title="Armure">Arm {combatTurnSheet.sheet.armure}</span>
+              <span title="Faces réussies sur d6">Esquive d6 : {formatEsquiveLabel(combatTurnSheet.sheet.esquiveOn)}</span>
+            </div>
+            {combatTurnSheet.participant.kind === 'monster' && combatTurnSheet.sheet.combatIA !== undefined && (
+              <p className="monster-combat-ia muted">
+                <strong>IA combat</strong> — {combatTurnSheet.sheet.combatIA}{' '}
+                <span className="muted">(échelle 0–3)</span>
+              </p>
+            )}
+            {combatTurnSheet.sheet.attacks.length > 0 && (
+              <div className="monster-combat-attacks">
+                <p className="muted monster-combat-attacks-label">Lancer les dégâts</p>
+                <div className="monster-combat-attack-buttons">
+                  {combatTurnSheet.sheet.attacks.map((attack) => (
+                    <button
+                      key={attack.id}
+                      type="button"
+                      className="btn-sm secondary monster-damage-roll-btn"
+                      onClick={() => handleRollCombatAttack(combatTurnSheet.participant, attack)}
+                    >
+                      {attackSummaryLabel(attack)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {combatDiceFeedback && combatDiceFeedback.participantId === combatTurnSheet.participant.id && (
+              <div className="monster-roll-result" role="status" aria-live="polite">
+                <p className="monster-roll-result-title">{combatDiceFeedback.attackName}</p>
+                <ul className="monster-roll-detail-list">
+                  {combatDiceFeedback.detailLines.map((line, index) => (
+                    <li key={`${combatDiceFeedback.attackId}-${index}`}>{line}</li>
+                  ))}
+                </ul>
+                <p className="monster-roll-total">
+                  Total : <strong>{combatDiceFeedback.total}</strong>
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         <form className="combat-form" onSubmit={handleApplyAction}>
           <div className="action-amount-row combat-action-controls">
             <div className="segmented" role="group" aria-label="Type d'action">
@@ -759,6 +1201,9 @@ function App() {
           <div className="combat-submit-row">
             <button type="submit" className="btn-sm" disabled={!canAct || possibleTargets.length === 0 || isApplyLocked}>
               Appliquer
+            </button>
+            <button type="button" className="btn-sm secondary" onClick={handlePreviousTurn} disabled={!state.started}>
+              Précédent
             </button>
             <button type="button" className="btn-sm secondary" onClick={handleNextTurn} disabled={!state.started}>
               Suivant
@@ -864,7 +1309,10 @@ function App() {
 
       {isAddModalOpen && (
         <div className="modal-backdrop" onClick={() => setIsAddModalOpen(false)}>
-          <div className="modal modal-add-participant" onClick={(event) => event.stopPropagation()}>
+          <div
+            className="modal modal-add-participant modal-combat-sheet"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="row modal-title-row">
               <h3>Ajouter un participant</h3>
               <button type="button" className="secondary btn-sm btn-modal-close" onClick={() => setIsAddModalOpen(false)}>
@@ -925,6 +1373,13 @@ function App() {
                       ...previous,
                       kind,
                       initiative: kind === 'monster' ? String(rollMonsterInitiative()) : '',
+                      combat: normalizeCombatSheet(
+                        {
+                          ...previous.combat,
+                          ...(kind === 'monster' ? { combatIA: previous.combat.combatIA ?? 0 } : { combatIA: undefined }),
+                        },
+                        kind,
+                      ),
                     }))
                   }}
                 >
@@ -979,6 +1434,13 @@ function App() {
                   />
                 )}
               </label>
+              <div className="monster-modal-section">
+                <CombatSheetFields
+                  participantKind={addForm.kind}
+                  sheet={addForm.combat}
+                  onSheetChange={(next) => setAddForm((previous) => ({ ...previous, combat: next }))}
+                />
+              </div>
               <label className="checkbox-row">
                 <input
                   type="checkbox"
@@ -1017,7 +1479,10 @@ function App() {
           className="modal-backdrop"
           onClick={() => setEditingParticipantId(null)}
         >
-          <div className="modal" onClick={(event) => event.stopPropagation()}>
+          <div
+            className="modal modal-combat-sheet"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="row modal-title-row">
               <h3>Modifier {editingParticipant.name}</h3>
               <button
@@ -1070,9 +1535,15 @@ function App() {
                   />
                 )}
               </label>
-              <div className="status-editor">
-                <p className="muted">Statuts (clic pour activer / désactiver)</p>
-                {renderStatusToggleStrip(editingParticipant.id, editingParticipant.statuses, 'card')}
+              <div className="monster-modal-section">
+                <CombatSheetFields
+                  participantKind={editingParticipant.kind}
+                  sheet={editingParticipant.combat ?? emptyCombatSheet(editingParticipant.kind)}
+                  onSheetChange={(next) => updateParticipantCombat(editingParticipant.id, next)}
+                />
+              </div>
+              <div className="status-editor status-editor--modal">
+                {renderStatusToggleStrip(editingParticipant.id, editingParticipant.statuses, 'editModal')}
               </div>
               <button className="danger" onClick={() => handleDeleteParticipant(editingParticipant.id)}>
                 Supprimer le participant
