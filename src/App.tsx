@@ -76,6 +76,11 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
+/** Initiative automatique monstre : d20 (1–20). */
+function rollMonsterInitiative(): number {
+  return Math.floor(Math.random() * 20) + 1
+}
+
 function isAlive(participant: Participant): boolean {
   return participant.hpCurrent > 0
 }
@@ -162,6 +167,33 @@ function App() {
   const [savePresetOnAdd, setSavePresetOnAdd] = useState<boolean>(false)
   const [addModalFeedback, setAddModalFeedback] = useState<{ text: string; variant: 'success' | 'error' } | null>(null)
   const importPresetsInputRef = useRef<HTMLInputElement>(null)
+  const initiativeRollFeedbackClearRef = useRef<number | null>(null)
+  const [initiativeRollAnimating, setInitiativeRollAnimating] = useState(false)
+
+  function playInitiativeRollFeedback(): void {
+    if (initiativeRollFeedbackClearRef.current !== null) {
+      window.clearTimeout(initiativeRollFeedbackClearRef.current)
+      initiativeRollFeedbackClearRef.current = null
+    }
+    setInitiativeRollAnimating(false)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setInitiativeRollAnimating(true)
+        initiativeRollFeedbackClearRef.current = window.setTimeout(() => {
+          setInitiativeRollAnimating(false)
+          initiativeRollFeedbackClearRef.current = null
+        }, 400)
+      })
+    })
+  }
+
+  useEffect(() => {
+    return () => {
+      if (initiativeRollFeedbackClearRef.current !== null) {
+        window.clearTimeout(initiativeRollFeedbackClearRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
@@ -230,6 +262,10 @@ function App() {
       setErrorMessage("Remplis les HP (actuels et max) et l'initiative.")
       return
     }
+    if (addForm.kind === 'monster' && (initiative < 1 || initiative > 20)) {
+      setErrorMessage("L'initiative monstre doit être entre 1 et 20.")
+      return
+    }
     if (hpMax <= 0) {
       setErrorMessage('Les HP max doivent etre superieurs a 0.')
       return
@@ -292,6 +328,7 @@ function App() {
       kind: preset.kind,
       hpCurrent: String(preset.hpCurrent),
       hpMax: String(preset.hpMax),
+      initiative: preset.kind === 'monster' ? String(rollMonsterInitiative()) : previous.initiative,
     }))
   }
 
@@ -324,7 +361,11 @@ function App() {
           return { ...participant, name: value }
         }
         if (field === 'kind') {
-          return { ...participant, kind: value as ParticipantKind }
+          const newKind = value as ParticipantKind
+          if (newKind === 'monster') {
+            return { ...participant, kind: newKind, initiative: rollMonsterInitiative() }
+          }
+          return { ...participant, kind: newKind }
         }
         const numeric = Number(value)
         if (Number.isNaN(numeric)) {
@@ -831,8 +872,10 @@ function App() {
               </button>
             </div>
             <p className="muted preset-hint">
-              Choisis un nom connu (suggestions ci-dessous) puis quitte le champ : les HP et le type se remplissent tout seuls. Il reste à saisir
-              l&apos;initiative.
+              Choisis un nom connu (suggestions ci-dessous) puis quitte le champ : les HP et le type se remplissent tout seuls.
+              {addForm.kind === 'monster'
+                ? " Pour un monstre, l'initiative est tirée au d20 — clique sur la valeur pour relancer."
+                : ' Il reste à saisir l\u2019initiative.'}
             </p>
             <div className="user-presets-toolbar">
               <button type="button" className="btn-sm secondary" onClick={handleExportUserPresets}>
@@ -874,7 +917,17 @@ function App() {
               </label>
               <label>
                 Type
-                <select value={addForm.kind} onChange={(event) => setAddForm((previous) => ({ ...previous, kind: event.target.value as ParticipantKind }))}>
+                <select
+                  value={addForm.kind}
+                  onChange={(event) => {
+                    const kind = event.target.value as ParticipantKind
+                    setAddForm((previous) => ({
+                      ...previous,
+                      kind,
+                      initiative: kind === 'monster' ? String(rollMonsterInitiative()) : '',
+                    }))
+                  }}
+                >
                   <option value="player">Joueur</option>
                   <option value="monster">Monstre</option>
                 </select>
@@ -901,13 +954,30 @@ function App() {
               </label>
               <label>
                 Initiative
-                <input
-                  type="number"
-                  placeholder="ex. 15"
-                  inputMode="numeric"
-                  value={addForm.initiative}
-                  onChange={(event) => setAddForm((previous) => ({ ...previous, initiative: event.target.value }))}
-                />
+                {addForm.kind === 'monster' ? (
+                  <button
+                    type="button"
+                    className={`initiative-roll-btn${initiativeRollAnimating ? ' initiative-roll-btn--rolling' : ''}`}
+                    title="Relancer l'initiative (d20, 1–20)"
+                    onClick={() => {
+                      playInitiativeRollFeedback()
+                      setAddForm((previous) => ({
+                        ...previous,
+                        initiative: String(rollMonsterInitiative()),
+                      }))
+                    }}
+                  >
+                    {addForm.initiative.trim() === '' ? '—' : addForm.initiative}
+                  </button>
+                ) : (
+                  <input
+                    type="number"
+                    placeholder="ex. 15"
+                    inputMode="numeric"
+                    value={addForm.initiative}
+                    onChange={(event) => setAddForm((previous) => ({ ...previous, initiative: event.target.value }))}
+                  />
+                )}
               </label>
               <label className="checkbox-row">
                 <input
@@ -980,7 +1050,25 @@ function App() {
               </label>
               <label>
                 Initiative
-                <input type="number" value={editingParticipant.initiative} onChange={(event) => handleParticipantFieldChange(editingParticipant.id, 'initiative', event.target.value)} />
+                {editingParticipant.kind === 'monster' ? (
+                  <button
+                    type="button"
+                    className={`initiative-roll-btn${initiativeRollAnimating ? ' initiative-roll-btn--rolling' : ''}`}
+                    title="Relancer l'initiative (d20, 1–20)"
+                    onClick={() => {
+                      playInitiativeRollFeedback()
+                      handleParticipantFieldChange(editingParticipant.id, 'initiative', String(rollMonsterInitiative()))
+                    }}
+                  >
+                    {editingParticipant.initiative}
+                  </button>
+                ) : (
+                  <input
+                    type="number"
+                    value={editingParticipant.initiative}
+                    onChange={(event) => handleParticipantFieldChange(editingParticipant.id, 'initiative', event.target.value)}
+                  />
+                )}
               </label>
               <div className="status-editor">
                 <p className="muted">Statuts (clic pour activer / désactiver)</p>
