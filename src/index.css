@@ -19,6 +19,16 @@
   --chart-damage-received: #ff9c6a;
   --chart-heal: #56d58d;
   --chart-heal-received: #4fa6ff;
+  --status-poison: #c084fc;
+  --status-poison-bg: rgba(192, 132, 252, 0.22);
+  --status-stun: #e8c547;
+  --status-stun-bg: rgba(232, 197, 71, 0.22);
+  --status-overcharged: #fb923c;
+  --status-overcharged-bg: rgba(251, 146, 60, 0.22);
+  --status-marked: #ff5b6e;
+  --status-marked-bg: rgba(255, 91, 110, 0.22);
+  --status-focus: #fde047;
+  --status-focus-bg: rgba(253, 224, 71, 0.2);
   --radius-md: 10px;
   --radius-lg: 14px;
   --space-2: 0.5rem;

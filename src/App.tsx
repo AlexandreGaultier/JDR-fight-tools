@@ -12,6 +12,7 @@ import {
   saveUserPresets,
   upsertUserPreset,
 } from './userPresetStorage'
+import { normalizeParticipantStatuses, PRESET_STATUSES, type PresetStatusId } from './statusPresets'
 import './App.css'
 
 const StatsDetailModal = lazy(async () => {
@@ -30,6 +31,7 @@ interface Participant {
   hpCurrent: number
   hpMax: number
   initiative: number
+  statuses: PresetStatusId[]
 }
 
 interface CombatEvent {
@@ -129,8 +131,15 @@ function App() {
         return { participants: [], events: [], currentTurnIndex: 0, round: 1, started: false, nextOrder: 1 }
       }
       const parsed = JSON.parse(raw) as CombatState
+      const safeParticipants = Array.isArray(parsed.participants)
+        ? parsed.participants.map((participant) => ({
+            ...participant,
+            statuses: normalizeParticipantStatuses(participant.statuses),
+          }))
+        : []
+
       return {
-        participants: Array.isArray(parsed.participants) ? parsed.participants : [],
+        participants: safeParticipants,
         events: Array.isArray(parsed.events) ? parsed.events : [],
         currentTurnIndex: typeof parsed.currentTurnIndex === 'number' ? parsed.currentTurnIndex : 0,
         round: typeof parsed.round === 'number' ? parsed.round : 1,
@@ -238,6 +247,7 @@ function App() {
       hpCurrent,
       hpMax,
       initiative,
+      statuses: [],
     }
 
     const updatedParticipants = [...participants, newParticipant]
@@ -347,6 +357,50 @@ function App() {
     if (editingParticipantId === participantId) {
       setEditingParticipantId(null)
     }
+  }
+
+  function toggleParticipantStatus(participantId: string, statusId: PresetStatusId): void {
+    setState((previous) => ({
+      ...previous,
+      participants: previous.participants.map((participant) => {
+        if (participant.id !== participantId) {
+          return participant
+        }
+
+        const hasStatus = participant.statuses.includes(statusId)
+        return {
+          ...participant,
+          statuses: hasStatus ? participant.statuses.filter((id) => id !== statusId) : [...participant.statuses, statusId],
+        }
+      }),
+    }))
+  }
+
+  function renderStatusToggleStrip(participantId: string, active: readonly PresetStatusId[], variant: 'card' | 'compact') {
+    return (
+      <div
+        className={`status-toggle-strip ${variant === 'compact' ? 'status-toggle-strip--compact' : ''}`}
+        onClick={(event) => event.stopPropagation()}
+        role="group"
+        aria-label="Statuts"
+      >
+        {PRESET_STATUSES.map((definition) => {
+          const isOn = active.includes(definition.id)
+          return (
+            <button
+              key={definition.id}
+              type="button"
+              className={`status-toggle status-toggle--${definition.id} ${isOn ? 'is-on' : ''}`}
+              title={definition.title}
+              aria-pressed={isOn}
+              onClick={() => toggleParticipantStatus(participantId, definition.id)}
+            >
+              {definition.label}
+            </button>
+          )
+        })}
+      </div>
+    )
   }
 
   function handleApplyAction(event: React.FormEvent<HTMLFormElement>): void {
@@ -573,11 +627,12 @@ function App() {
             <p className="active-line2 muted">
               {activeParticipant.hpCurrent}/{activeParticipant.hpMax} HP - Initiative {activeParticipant.initiative}
             </p>
+            {renderStatusToggleStrip(activeParticipant.id, activeParticipant.statuses, 'compact')}
           </div>
         )}
 
         <form className="combat-form" onSubmit={handleApplyAction}>
-          <div className="action-amount-row">
+          <div className="action-amount-row combat-action-controls">
             <div className="segmented" role="group" aria-label="Type d'action">
               <button
                 type="button"
@@ -595,13 +650,12 @@ function App() {
               </button>
             </div>
             <label className="amount-field">
-              <span className="amount-label">Montant</span>
               <input
                 className="input-amount"
                 type="number"
                 min={1}
                 inputMode="numeric"
-                placeholder="ex. 3"
+                placeholder="Montant"
                 value={actionForm.amount}
                 onChange={(event) => setActionForm((previous) => ({ ...previous, amount: event.target.value }))}
               />
@@ -610,16 +664,54 @@ function App() {
 
           <div className="targets-box">
             <p className="muted">Cibles (selection multiple, auto-soin autorise)</p>
-            <div className="targets-grid">
-              {possibleTargets.length === 0 && <p className="muted">Aucune cible disponible</p>}
-              {possibleTargets.map((target) => (
-                <label key={target.id} className="target-item">
-                  <input type="checkbox" checked={actionForm.targetIds.includes(target.id)} onChange={() => toggleTarget(target.id)} />
-                  <span className={`target-label ${getParticipantBarClass(target)}`}>
-                    {target.name} ({target.hpCurrent}/{target.hpMax})
-                  </span>
-                </label>
-              ))}
+            {possibleTargets.length === 0 && <p className="muted">Aucune cible disponible</p>}
+            <div className="targets-split">
+              <div className="targets-column">
+                <p className="targets-column-title muted">Joueurs</p>
+                <div className="targets-grid">
+                  {possibleTargets
+                    .filter((target) => target.kind === 'player')
+                    .map((target) => (
+                      <label key={target.id} className="target-item">
+                        <input type="checkbox" checked={actionForm.targetIds.includes(target.id)} onChange={() => toggleTarget(target.id)} />
+                        <div className="target-item-body">
+                          <span className={`target-label ${getParticipantBarClass(target)}`}>
+                            {target.name} ({target.hpCurrent}/{target.hpMax})
+                          </span>
+                          <div className={`hp-bar hp-bar-tiny ${getParticipantBarClass(target)}`}>
+                            <div
+                              className="hp-bar-fill"
+                              style={{ width: `${clamp((target.hpCurrent / target.hpMax) * 100, 0, 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                </div>
+              </div>
+              <div className="targets-column">
+                <p className="targets-column-title muted">Monstres</p>
+                <div className="targets-grid">
+                  {possibleTargets
+                    .filter((target) => target.kind === 'monster')
+                    .map((target) => (
+                      <label key={target.id} className="target-item">
+                        <input type="checkbox" checked={actionForm.targetIds.includes(target.id)} onChange={() => toggleTarget(target.id)} />
+                        <div className="target-item-body">
+                          <span className={`target-label ${getParticipantBarClass(target)}`}>
+                            {target.name} ({target.hpCurrent}/{target.hpMax})
+                          </span>
+                          <div className={`hp-bar hp-bar-tiny ${getParticipantBarClass(target)}`}>
+                            <div
+                              className="hp-bar-fill"
+                              style={{ width: `${clamp((target.hpCurrent / target.hpMax) * 100, 0, 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -634,7 +726,7 @@ function App() {
         </form>
       </section>
 
-      <section className="panel">
+      <section className="panel participants-panel">
         <h2>Participants</h2>
         <div className="list">
           {participants.length === 0 && <p className="muted">Aucun participant pour le moment.</p>}
@@ -644,22 +736,25 @@ function App() {
               key={participant.id}
               onClick={() => setEditingParticipantId(participant.id)}
             >
-              <div className="participant-top">
-                <div className="participant-name-row">
-                  <strong className="participant-name" title={participant.name || undefined}>
-                    {participant.name || 'Sans nom'}
-                  </strong>
-                  {!isAlive(participant) && <span className="badge">KO</span>}
+              <div className="participant-top participant-top-with-status">
+                <div className="participant-title-block">
+                  <div className="participant-name-row">
+                    <strong className="participant-name" title={participant.name || undefined}>
+                      {participant.name || 'Sans nom'}
+                    </strong>
+                    {!isAlive(participant) && <span className="badge">KO</span>}
+                  </div>
+                  <div className="participant-meta muted">
+                    <span>
+                      {participant.hpCurrent}/{participant.hpMax} HP
+                    </span>
+                    <span className="participant-meta-sep" aria-hidden="true">
+                      ·
+                    </span>
+                    <span>Init {participant.initiative}</span>
+                  </div>
                 </div>
-                <div className="participant-meta muted">
-                  <span>
-                    {participant.hpCurrent}/{participant.hpMax} HP
-                  </span>
-                  <span className="participant-meta-sep" aria-hidden="true">
-                    ·
-                  </span>
-                  <span>Init {participant.initiative}</span>
-                </div>
+                {renderStatusToggleStrip(participant.id, participant.statuses, 'card')}
               </div>
               <div className={`hp-bar ${getParticipantBarClass(participant)}`}>
                 <div className="hp-bar-fill" style={{ width: `${clamp((participant.hpCurrent / participant.hpMax) * 100, 0, 100)}%` }} />
@@ -669,7 +764,7 @@ function App() {
         </div>
       </section>
 
-      <section className="panel">
+      <section className="panel stats-panel">
         <div className="stats-heading">
           <h2>Statistiques</h2>
           {state.events.length > 0 && (
@@ -848,11 +943,18 @@ function App() {
       )}
 
       {editingParticipant && (
-        <div className="modal-backdrop" onClick={() => setEditingParticipantId(null)}>
+        <div
+          className="modal-backdrop"
+          onClick={() => setEditingParticipantId(null)}
+        >
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="row modal-title-row">
               <h3>Modifier {editingParticipant.name}</h3>
-              <button type="button" className="secondary btn-sm btn-modal-close" onClick={() => setEditingParticipantId(null)}>
+              <button
+                type="button"
+                className="secondary btn-sm btn-modal-close"
+                onClick={() => setEditingParticipantId(null)}
+              >
                 Fermer
               </button>
             </div>
@@ -880,6 +982,10 @@ function App() {
                 Initiative
                 <input type="number" value={editingParticipant.initiative} onChange={(event) => handleParticipantFieldChange(editingParticipant.id, 'initiative', event.target.value)} />
               </label>
+              <div className="status-editor">
+                <p className="muted">Statuts (clic pour activer / désactiver)</p>
+                {renderStatusToggleStrip(editingParticipant.id, editingParticipant.statuses, 'card')}
+              </div>
               <button className="danger" onClick={() => handleDeleteParticipant(editingParticipant.id)}>
                 Supprimer le participant
               </button>
