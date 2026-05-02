@@ -1136,7 +1136,7 @@ function App() {
               <input
                 className="input-amount"
                 type="number"
-                min={1}
+                min={0}
                 inputMode="numeric"
                 placeholder="Montant"
                 value={actionForm.amount}

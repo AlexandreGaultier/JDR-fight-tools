@@ -7,31 +7,31 @@ export const PRESET_STATUSES: readonly { id: PresetStatusId; label: string; titl
     id: 'poison',
     label: 'Poison',
     title:
-      'Empoisonné — rappel MJ : par exemple subir des dégâts au début du tour (ex. 2 PV au prochain tour). À adapter selon ta règle.',
+      'La cible, au début de son tour, doit lancer 1d20 + Modificateur de Vaillance et faire 15 ou + pour résister au poison prendant 3 tours. Si elle rate, elle prend 2 dégâts de poison.',
   },
   {
     id: 'stun',
     label: 'Stun',
     title:
-      'Sonné / étourdi — rappel MJ : par exemple ne pas jouer son prochain tour, ou agir avec désavantage. À adapter selon ta règle.',
+      'La cible est étourdie et ne peut pas agir pendant 1 tour.',
   },
   {
     id: 'overcharged',
     label: 'Surch.',
     title:
-      'Surchargé — rappel MJ : effet situationnel (bonus temporaire, risque de surcharge, etc.). À adapter selon ta règle.',
+      'La prochaine attaque d\'un allié ciblée fera 1,5 fois les dégâts',
   },
   {
     id: 'marked',
     label: 'Marqué',
     title:
-      'Marqué — rappel MJ : la prochaine attaque ou un allié inflige un effet bonus / avantage. À adapter selon ta règle.',
+      'La cible prend +5 dégâts lors de la prochaine attaque magique/physique subie',
   },
   {
     id: 'focus',
     label: 'Focus',
     title:
-      'Focus — rappel MJ : cible prioritaire pour les monstres ou avantage tactique. À adapter selon ta règle.',
+      'La cible ajoutera +2 dégâts lors de sa prochaine attaque.',
   },
 ] as const
 
