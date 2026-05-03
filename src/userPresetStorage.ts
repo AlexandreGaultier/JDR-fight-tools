@@ -1,3 +1,4 @@
+import { normalizeCombatSheet } from './combatSheet'
 import { normalizePresetName, type ParticipantPreset, type PresetKind } from './participantPresets'
 
 export const USER_PRESETS_STORAGE_KEY = 'jdr-fight-tools-user-presets-v1'
@@ -43,6 +44,20 @@ function isValidPresetEntry(item: unknown): item is ParticipantPreset {
   if (hpMax <= 0 || hpCurrent < 0 || hpCurrent > hpMax) {
     return false
   }
+  if (o.initiative !== undefined) {
+    if (typeof o.initiative !== 'number' || !Number.isFinite(o.initiative)) {
+      return false
+    }
+    if (kind === 'monster' && (o.initiative < 1 || o.initiative > 20)) {
+      return false
+    }
+  }
+  if (o.combat !== undefined && o.combat !== null) {
+    if (typeof o.combat !== 'object') {
+      return false
+    }
+    normalizeCombatSheet(o.combat, kind as PresetKind)
+  }
   return true
 }
 
@@ -75,7 +90,32 @@ export function parseUserPresetsFromJson(text: string): ParticipantPreset[] {
     if (hpMax <= 0 || hpCurrent < 0 || hpCurrent > hpMax) {
       throw new Error(`HP invalides à l'index ${i}.`)
     }
-    out.push({ name, kind: kind as PresetKind, hpMax, hpCurrent })
+    const initiativeRaw = o.initiative
+    let initiative: number | undefined
+    if (initiativeRaw !== undefined && initiativeRaw !== null) {
+      const ini = Number(initiativeRaw)
+      if (!Number.isFinite(ini)) {
+        throw new Error(`Initiative invalide à l'index ${i}.`)
+      }
+      const rounded = Math.round(ini)
+      if (kind === 'monster' && (rounded < 1 || rounded > 20)) {
+        throw new Error(`Initiative monstre (1–20) invalide à l'index ${i}.`)
+      }
+      initiative = rounded
+    }
+    const combatRaw = o.combat
+    const combat =
+      combatRaw !== undefined && combatRaw !== null && typeof combatRaw === 'object'
+        ? normalizeCombatSheet(combatRaw, kind as PresetKind)
+        : undefined
+    out.push({
+      name,
+      kind: kind as PresetKind,
+      hpMax,
+      hpCurrent,
+      ...(initiative !== undefined ? { initiative } : {}),
+      ...(combat !== undefined ? { combat } : {}),
+    })
   }
   return out
 }

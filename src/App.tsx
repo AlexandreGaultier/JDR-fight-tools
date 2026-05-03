@@ -633,6 +633,8 @@ function App() {
           kind: addForm.kind,
           hpMax,
           hpCurrent,
+          initiative,
+          combat: normalizeCombatSheet(addForm.combat, addForm.kind),
         }),
       )
     }
@@ -653,7 +655,15 @@ function App() {
       kind: preset.kind,
       hpCurrent: String(preset.hpCurrent),
       hpMax: String(preset.hpMax),
-      initiative: preset.kind === 'monster' ? String(rollMonsterInitiative()) : previous.initiative,
+      initiative:
+        preset.kind === 'monster'
+          ? preset.initiative !== undefined && preset.initiative >= 1 && preset.initiative <= 20
+            ? String(preset.initiative)
+            : String(rollMonsterInitiative())
+          : preset.initiative !== undefined
+            ? String(preset.initiative)
+            : previous.initiative,
+      combat: normalizeCombatSheet(preset.combat ?? emptyCombatSheet(preset.kind), preset.kind),
     }))
   }
 
