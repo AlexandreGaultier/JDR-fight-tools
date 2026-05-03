@@ -6,6 +6,7 @@ import {
   type ParticipantPreset,
 } from './participantPresets'
 import {
+  exportSingleUserPresetToFile,
   exportUserPresetsToFile,
   loadUserPresets,
   parseUserPresetsFromJson,
@@ -478,7 +479,9 @@ function App() {
   const [isStatsModalOpen, setIsStatsModalOpen] = useState<boolean>(false)
   const [userPresets, setUserPresets] = useState<ParticipantPreset[]>(() => loadUserPresets())
   const [savePresetOnAdd, setSavePresetOnAdd] = useState<boolean>(false)
+  const [isUserPresetsManagerOpen, setIsUserPresetsManagerOpen] = useState<boolean>(false)
   const [addModalFeedback, setAddModalFeedback] = useState<{ text: string; variant: 'success' | 'error' } | null>(null)
+  const [participantEditFeedback, setParticipantEditFeedback] = useState<{ text: string; variant: 'success' | 'error' } | null>(null)
   const importPresetsInputRef = useRef<HTMLInputElement>(null)
   const initiativeRollFeedbackClearRef = useRef<number | null>(null)
   const [initiativeRollAnimating, setInitiativeRollAnimating] = useState(false)
@@ -522,6 +525,18 @@ function App() {
   useEffect(() => {
     saveUserPresets(userPresets)
   }, [userPresets])
+
+  useEffect(() => {
+    if (!isAddModalOpen) {
+      setIsUserPresetsManagerOpen(false)
+    }
+  }, [isAddModalOpen])
+
+  useEffect(() => {
+    if (!editingParticipantId) {
+      setParticipantEditFeedback(null)
+    }
+  }, [editingParticipantId])
 
   useEffect(() => {
     if (!isApplyLocked) {
@@ -977,6 +992,16 @@ function App() {
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'fr'))
   }, [userPresets])
 
+  const builtinPresetKeySet = useMemo(
+    () => new Set(PARTICIPANT_PRESETS.map((preset) => normalizePresetName(preset.name))),
+    [],
+  )
+
+  const sortedUserPresetsForManager = useMemo(
+    () => [...userPresets].sort((a, b) => a.name.localeCompare(b.name, 'fr')),
+    [userPresets],
+  )
+
   const playerColorById = useMemo(() => {
     const colors = ['player-green', 'player-blue', 'player-yellow', 'player-purple']
     const map: Record<string, string> = {}
@@ -1001,6 +1026,43 @@ function App() {
   function handleExportUserPresets(): void {
     exportUserPresetsToFile(userPresets)
     setAddModalFeedback({ text: 'Fichier JSON téléchargé.', variant: 'success' })
+  }
+
+  function userPresetOverridesBuiltin(preset: ParticipantPreset): boolean {
+    return builtinPresetKeySet.has(normalizePresetName(preset.name))
+  }
+
+  function handleRemoveUserPreset(presetName: string): void {
+    const key = normalizePresetName(presetName)
+    setUserPresets((list) => list.filter((preset) => normalizePresetName(preset.name) !== key))
+    setAddModalFeedback({ text: `Preset « ${presetName.trim()} » supprimé.`, variant: 'success' })
+  }
+
+  function handleExportOneUserPreset(preset: ParticipantPreset): void {
+    exportSingleUserPresetToFile(preset)
+    setAddModalFeedback({ text: `Fichier JSON téléchargé : ${preset.name}.`, variant: 'success' })
+  }
+
+  function handleSaveParticipantAsPreset(participant: Participant): void {
+    const name = participant.name.trim()
+    if (!name) {
+      setParticipantEditFeedback({ text: 'Le nom est obligatoire pour enregistrer un preset.', variant: 'error' })
+      return
+    }
+    setUserPresets((previous) =>
+      upsertUserPreset(previous, {
+        name,
+        kind: participant.kind,
+        hpMax: participant.hpMax,
+        hpCurrent: participant.hpCurrent,
+        initiative: participant.initiative,
+        combat: normalizeCombatSheet(participant.combat ?? emptyCombatSheet(participant.kind), participant.kind),
+      }),
+    )
+    setParticipantEditFeedback({
+      text: `Preset « ${name} » enregistré dans ce navigateur (tu peux l’exporter depuis « Gérer mes presets »).`,
+      variant: 'success',
+    })
   }
 
   function handleImportUserPresetsFile(event: React.ChangeEvent<HTMLInputElement>): void {
@@ -1336,6 +1398,9 @@ function App() {
                 : ' Il reste à saisir l\u2019initiative.'}
             </p>
             <div className="user-presets-toolbar">
+              <button type="button" className="btn-sm secondary" onClick={() => setIsUserPresetsManagerOpen(true)}>
+                Gérer mes presets
+              </button>
               <button type="button" className="btn-sm secondary" onClick={handleExportUserPresets}>
                 Exporter mes presets
               </button>
@@ -1462,6 +1527,75 @@ function App() {
               <button type="submit">Ajouter</button>
             </form>
           </div>
+          {isUserPresetsManagerOpen && (
+            <div
+              className="modal-backdrop modal-backdrop--nested"
+              onClick={(event) => {
+                event.stopPropagation()
+                setIsUserPresetsManagerOpen(false)
+              }}
+            >
+              <div className="modal modal-user-presets-manager" onClick={(event) => event.stopPropagation()}>
+                <div className="row modal-title-row">
+                  <h3>Mes presets (navigateur)</h3>
+                  <button type="button" className="secondary btn-sm btn-modal-close" onClick={() => setIsUserPresetsManagerOpen(false)}>
+                    Fermer
+                  </button>
+                </div>
+                <p className="muted user-presets-manager-intro">
+                  Ce sont uniquement tes entrées enregistrées dans ce navigateur. À l&apos;autocomplete et au blur du nom,{' '}
+                  <strong>tes presets passent avant</strong> ceux du jeu si le nom est identique (après normalisation des accents
+                  et majuscules). L&apos;export « tous les presets » ne contient que cette liste — rien n&apos;est fusionné avec le
+                  fichier des presets du jeu.
+                </p>
+                <p className="muted user-presets-manager-intro">
+                  Tu peux exporter <strong>un seul</strong> preset dans un fichier dédié (pratique pour transférer un perso sans
+                  tout mélanger), ou supprimer une entrée pour retrouver le preset du jeu sous le même nom.
+                </p>
+                {sortedUserPresetsForManager.length === 0 ? (
+                  <p className="muted">Aucun preset perso pour le moment. Coche « Enregistrer dans mes presets » en ajoutant un participant.</p>
+                ) : (
+                  <ul className="user-preset-manage-list">
+                    {sortedUserPresetsForManager.map((preset) => {
+                      const overrides = userPresetOverridesBuiltin(preset)
+                      const attackCount = preset.combat?.attacks.length ?? 0
+                      return (
+                        <li key={normalizePresetName(preset.name)} className="user-preset-manage-item">
+                          <div className="user-preset-manage-main">
+                            <strong className="user-preset-manage-name">{preset.name}</strong>
+                            <span className="muted user-preset-manage-meta">
+                              {preset.kind === 'monster' ? 'Monstre' : 'Joueur'} · {preset.hpCurrent}/{preset.hpMax} HP
+                              {preset.initiative !== undefined ? ` · Init ${preset.initiative}` : ''}
+                              {attackCount > 0 ? ` · ${attackCount} attaque(s)` : ''}
+                            </span>
+                            {overrides && (
+                              <p className="user-preset-conflict-note">
+                                <span className="badge badge-warn">Même nom qu&apos;un preset du jeu</span> — c&apos;est ta version
+                                qui est utilisée ici.
+                              </p>
+                            )}
+                          </div>
+                          <div className="user-preset-manage-actions">
+                            <button type="button" className="btn-sm secondary" onClick={() => handleExportOneUserPreset(preset)}>
+                              Exporter ce preset
+                            </button>
+                            <button type="button" className="btn-sm danger" onClick={() => handleRemoveUserPreset(preset.name)}>
+                              Supprimer
+                            </button>
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+                <div className="user-presets-manager-footer">
+                  <button type="button" className="btn-sm secondary" onClick={handleExportUserPresets} disabled={userPresets.length === 0}>
+                    Tout exporter (JSON)
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1503,6 +1637,11 @@ function App() {
                 Fermer
               </button>
             </div>
+            {participantEditFeedback && (
+              <p className={`add-modal-feedback ${participantEditFeedback.variant === 'error' ? 'is-error' : ''}`}>
+                {participantEditFeedback.text}
+              </p>
+            )}
             <div className="grid-form">
               <label>
                 Nom
@@ -1554,6 +1693,11 @@ function App() {
               </div>
               <div className="status-editor status-editor--modal">
                 {renderStatusToggleStrip(editingParticipant.id, editingParticipant.statuses, 'editModal')}
+              </div>
+              <div className="participant-edit-preset-actions">
+                <button type="button" className="btn-sm secondary" onClick={() => handleSaveParticipantAsPreset(editingParticipant)}>
+                  Sauvegarder dans mes presets
+                </button>
               </div>
               <button className="danger" onClick={() => handleDeleteParticipant(editingParticipant.id)}>
                 Supprimer le participant

@@ -120,12 +120,38 @@ export function parseUserPresetsFromJson(text: string): ParticipantPreset[] {
   return out
 }
 
-export function exportUserPresetsToFile(presets: ParticipantPreset[]): void {
+function sanitizePresetBasename(name: string): string {
+  const s = name
+    .trim()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^\p{L}\p{N}_-]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+  return s || 'preset'
+}
+
+export function exportUserPresetsToFile(
+  presets: ParticipantPreset[],
+  options?: { downloadFilename?: string },
+): void {
   const blob = new Blob([JSON.stringify(presets, null, 2)], { type: 'application/json;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `jdr-presets-perso-${new Date().toISOString().slice(0, 10)}.json`
+  const defaultName = `jdr-presets-perso-${new Date().toISOString().slice(0, 10)}.json`
+  const custom = options?.downloadFilename?.trim()
+  let download = defaultName
+  if (custom) {
+    download = custom.toLowerCase().endsWith('.json') ? custom : `${custom}.json`
+  }
+  a.download = download
   a.click()
   URL.revokeObjectURL(url)
+}
+
+/** Télécharge un seul preset dans un fichier JSON dédié (pratique pour éviter les gros exports). */
+export function exportSingleUserPresetToFile(preset: ParticipantPreset): void {
+  const stamp = new Date().toISOString().slice(0, 10)
+  exportUserPresetsToFile([preset], { downloadFilename: `jdr-preset-${sanitizePresetBasename(preset.name)}-${stamp}.json` })
 }
