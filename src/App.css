@@ -446,6 +446,48 @@ button.secondary.danger-text:hover {
   padding-top: var(--space-1);
 }
 
+@keyframes preset-save-success-flash {
+  0% {
+    transform: scale(1);
+    filter: brightness(1);
+    box-shadow: none;
+  }
+  45% {
+    transform: scale(1.05);
+    filter: brightness(1.1);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--success) 40%, transparent);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+    box-shadow: none;
+  }
+}
+
+@keyframes preset-save-success-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.82;
+  }
+}
+
+button.preset-save-btn {
+  transform-origin: center;
+}
+
+button.preset-save-btn.preset-save-btn--success-flash {
+  animation: preset-save-success-flash 0.44s cubic-bezier(0.34, 1.35, 0.55, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.preset-save-btn.preset-save-btn--success-flash {
+    animation: preset-save-success-soft 0.32s ease-out both;
+  }
+}
+
 .participant-top-with-status {
   align-items: flex-start;
 }

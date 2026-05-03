@@ -485,6 +485,8 @@ function App() {
   const importPresetsInputRef = useRef<HTMLInputElement>(null)
   const initiativeRollFeedbackClearRef = useRef<number | null>(null)
   const [initiativeRollAnimating, setInitiativeRollAnimating] = useState(false)
+  const presetSaveAnimClearRef = useRef<number | null>(null)
+  const [presetSaveButtonAnimating, setPresetSaveButtonAnimating] = useState(false)
   const [combatDiceFeedback, setCombatDiceFeedback] = useState<{
     participantId: string
     attackId: string
@@ -510,10 +512,30 @@ function App() {
     })
   }
 
+  function playPresetSaveSuccessFeedback(): void {
+    if (presetSaveAnimClearRef.current !== null) {
+      window.clearTimeout(presetSaveAnimClearRef.current)
+      presetSaveAnimClearRef.current = null
+    }
+    setPresetSaveButtonAnimating(false)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setPresetSaveButtonAnimating(true)
+        presetSaveAnimClearRef.current = window.setTimeout(() => {
+          setPresetSaveButtonAnimating(false)
+          presetSaveAnimClearRef.current = null
+        }, 420)
+      })
+    })
+  }
+
   useEffect(() => {
     return () => {
       if (initiativeRollFeedbackClearRef.current !== null) {
         window.clearTimeout(initiativeRollFeedbackClearRef.current)
+      }
+      if (presetSaveAnimClearRef.current !== null) {
+        window.clearTimeout(presetSaveAnimClearRef.current)
       }
     }
   }, [])
@@ -1063,6 +1085,7 @@ function App() {
       text: `Preset « ${name} » enregistré dans ce navigateur (tu peux l’exporter depuis « Gérer mes presets »).`,
       variant: 'success',
     })
+    playPresetSaveSuccessFeedback()
   }
 
   function handleImportUserPresetsFile(event: React.ChangeEvent<HTMLInputElement>): void {
@@ -1695,7 +1718,11 @@ function App() {
                 {renderStatusToggleStrip(editingParticipant.id, editingParticipant.statuses, 'editModal')}
               </div>
               <div className="participant-edit-preset-actions">
-                <button type="button" className="btn-sm secondary" onClick={() => handleSaveParticipantAsPreset(editingParticipant)}>
+                <button
+                  type="button"
+                  className={`btn-sm secondary preset-save-btn${presetSaveButtonAnimating ? ' preset-save-btn--success-flash' : ''}`}
+                  onClick={() => handleSaveParticipantAsPreset(editingParticipant)}
+                >
                   Sauvegarder dans mes presets
                 </button>
               </div>
